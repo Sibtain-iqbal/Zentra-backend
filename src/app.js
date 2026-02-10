@@ -38,9 +38,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(xss());
 app.use(mongoSanitize());
 
-app.use('/test', (req, res) => {
-  res.send('test');
-});
 // gzip compression
 app.use(compression());
 
