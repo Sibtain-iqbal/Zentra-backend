@@ -6,6 +6,7 @@ const compression = require('compression');
 const cors = require('cors');
 const passport = require('passport');
 const httpStatus = require('http-status');
+const dns = require('dns');
 const config = require('./config/config');
 const morgan = require('./config/morgan');
 const { jwtStrategy, googleStrategy } = require('./config/passport');
@@ -14,6 +15,10 @@ const routes = require('./routes/v1');
 const routesV2 = require('./routes/v2');
 const { errorConverter, errorHandler } = require('./middlewares/error');
 const ApiError = require('./utils/ApiError');
+
+// for the dns to get the mongodb assess
+
+dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 const app = express();
 
