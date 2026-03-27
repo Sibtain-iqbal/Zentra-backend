@@ -6,7 +6,6 @@ const compression = require('compression');
 const cors = require('cors');
 const passport = require('passport');
 const httpStatus = require('http-status');
-const dns = require('dns');
 const config = require('./config/config');
 const morgan = require('./config/morgan');
 const { jwtStrategy, googleStrategy } = require('./config/passport');
@@ -21,8 +20,6 @@ const ApiError = require('./utils/ApiError');
 dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 const app = express();
-
-dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 // Trust proxy - needed for OAuth callbacks behind reverse proxy (Vercel, AWS, etc.)
 app.set('trust proxy', true);
