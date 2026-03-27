@@ -22,6 +22,8 @@ dns.setServers(['1.1.1.1', '8.8.8.8']);
 
 const app = express();
 
+dns.setServers(['1.1.1.1', '8.8.8.8']);
+
 // Trust proxy - needed for OAuth callbacks behind reverse proxy (Vercel, AWS, etc.)
 app.set('trust proxy', true);
 

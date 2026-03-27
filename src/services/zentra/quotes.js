@@ -19,27 +19,28 @@ const simpleHash = (str) => {
 };
 
 /**
- * Get daily quote based on userId and current date
+ * Get daily quote based on userId and date
  * Uses seed(userId + date) for deterministic daily selection
  * @param {string} userId - User ID
+ * @param {string} [date] - Optional date string (YYYY-MM-DD or ISO). Defaults to today.
  * @returns {Object} Daily quote
  */
-const getDailyQuote = (userId) => {
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const seed = `${userId}-${today}`;
+const getDailyQuote = (userId, date) => {
+  const dateKey = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+  const seed = `${userId}-${dateKey}`;
   const hash = simpleHash(seed);
   const index = hash % QUOTES.length;
 
   const quote = QUOTES[index];
 
-  logger.info('[Quotes] Selected quote #%d for user %s on %s', quote.id, userId, today);
+  logger.info('[Quotes] Selected quote #%d for user %s on %s', quote.id, userId, dateKey);
 
   return {
     id: quote.id,
     text: quote.text,
     author: quote.author,
     category: quote.category,
-    date: today,
+    date: dateKey,
   };
 };
 
