@@ -9,6 +9,7 @@ const getDashboard = {
 const getSummary = {
   query: Joi.object().keys({
     period: Joi.string().valid('WEEK', 'MONTH', 'QUARTER', 'YEAR').default('MONTH'),
+    date: Joi.string().optional(),
   }),
 };
 

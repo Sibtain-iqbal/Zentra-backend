@@ -12,21 +12,30 @@ const {
 } = require('./zentra');
 
 /**
- * Get start of today (midnight)
+ * Get start of a given date (midnight local)
  */
-const getStartOfToday = () => {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+const getStartOfDay = (dateStr) => {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
 
 /**
- * Get trades for today
+ * Get end of a given date (23:59:59.999 local)
  */
-const getTodayTrades = async (userId) => {
-  const startOfToday = getStartOfToday();
+const getEndOfDay = (dateStr) => {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+};
+
+/**
+ * Get trades for a specific date (defaults to today)
+ */
+const getTradesForDate = async (userId, dateStr) => {
+  const start = getStartOfDay(dateStr);
+  const end = getEndOfDay(dateStr);
   return Trade.find({
     userId,
-    entryTime: { $gte: startOfToday },
+    entryTime: { $gte: start, $lte: end },
   })
     .sort({ entryTime: -1 })
     .lean();
@@ -54,19 +63,17 @@ const getTradesInRange = async (userId, startDate, endDate = new Date()) => {
 /**
  * Feature 1: Get Mental Battery
  */
-const getMentalBattery = async (userId) => {
-  logger.info('[ZentraService] getMentalBattery for user: %s', userId);
+const getMentalBattery = async (userId, date) => {
+  logger.info('[ZentraService] getMentalBattery for user: %s date: %s', userId, date || 'today');
 
-  const [plan, todayTrades, recentTrades] = await Promise.all([
+  const [plan, dateTrades, recentTrades] = await Promise.all([
     TradingPlan.findOne({ userId }).lean(),
-    getTodayTrades(userId),
+    getTradesForDate(userId, date),
     getRecentTrades(userId, 5),
   ]);
 
-  // Calculate plan control for recharge bonus calculation
   const planControlResult = planControl.calculatePlanControl(recentTrades, plan);
-
-  const result = mentalBattery.calculateMentalBattery(todayTrades, plan, planControlResult.percentage);
+  const result = mentalBattery.calculateMentalBattery(dateTrades, plan, planControlResult.percentage);
 
   logger.info('[ZentraService] Mental battery result: %d%% status: %s', result.battery, result.status);
   return result;
@@ -75,20 +82,17 @@ const getMentalBattery = async (userId) => {
 /**
  * Feature 2: Get Plan Control % with deviation attribution
  */
-const getPlanControl = async (userId) => {
-  logger.info('[ZentraService] getPlanControl for user: %s', userId);
+const getPlanControl = async (userId, date) => {
+  logger.info('[ZentraService] getPlanControl for user: %s date: %s', userId, date || 'today');
 
-  const [plan, todayTrades, recentTrades] = await Promise.all([
+  const [plan, dateTrades, recentTrades] = await Promise.all([
     TradingPlan.findOne({ userId }).lean(),
-    getTodayTrades(userId),
+    getTradesForDate(userId, date),
     getRecentTrades(userId, 5),
   ]);
 
-  // Get mental battery level for attribution analysis
   const planControlBasic = planControl.calculatePlanControl(recentTrades, plan);
-  const batteryResult = mentalBattery.calculateMentalBattery(todayTrades, plan, planControlBasic.percentage);
-
-  // Use enhanced function with attribution
+  const batteryResult = mentalBattery.calculateMentalBattery(dateTrades, plan, planControlBasic.percentage);
   const result = planControl.calculatePlanControlWithAttribution(recentTrades, plan, batteryResult.battery);
 
   logger.info(
@@ -101,18 +105,12 @@ const getPlanControl = async (userId) => {
 
 /**
  * Feature 3: Get Behavior Heatmap with insight
- * Returns current aggregated heatmap (last 30 days). Historical data is auto-analyzed on import.
+ * Returns heatmap for the selected date only.
  */
-const getBehaviorHeatmap = async (userId) => {
-  logger.info('[ZentraService] getBehaviorHeatmap for user: %s', userId);
+const getBehaviorHeatmap = async (userId, date) => {
+  logger.info('[ZentraService] getBehaviorHeatmap for user: %s date: %s', userId, date || 'today');
 
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const [plan, trades] = await Promise.all([
-    TradingPlan.findOne({ userId }).lean(),
-    getTradesInRange(userId, thirtyDaysAgo),
-  ]);
+  const [plan, trades] = await Promise.all([TradingPlan.findOne({ userId }).lean(), getTradesForDate(userId, date)]);
 
   const result = behaviorHeatmap.calculateBehaviorHeatmapWithInsight(trades, plan);
 
@@ -122,19 +120,21 @@ const getBehaviorHeatmap = async (userId) => {
     result.insight?.type || 'none'
   );
 
-  // Persist today's snapshot
-  const today = getStartOfToday();
-  await BehaviorHeatmapHistory.updateOne(
-    { userId, date: today },
-    {
-      userId,
-      date: today,
-      windows: result.windows,
-      insight: result.insight,
-      totalTrades: result.totalTrades,
-    },
-    { upsert: true }
-  );
+  // Persist snapshot only when there are actual trades for this date
+  if (result.totalTrades > 0) {
+    const snapshotDate = getStartOfDay(date);
+    await BehaviorHeatmapHistory.updateOne(
+      { userId, date: snapshotDate },
+      {
+        userId,
+        date: snapshotDate,
+        windows: result.windows,
+        insight: result.insight,
+        totalTrades: result.totalTrades,
+      },
+      { upsert: true }
+    );
+  }
 
   return result;
 };
@@ -142,12 +142,19 @@ const getBehaviorHeatmap = async (userId) => {
 /**
  * Feature 4: Get Psychological Radar
  */
-const getPsychologicalRadar = async (userId) => {
-  logger.info('[ZentraService] getPsychologicalRadar for user: %s', userId);
+const getPsychologicalRadar = async (userId, date) => {
+  logger.info('[ZentraService] getPsychologicalRadar for user: %s date: %s', userId, date || 'today');
 
-  const [plan, recentTrades] = await Promise.all([TradingPlan.findOne({ userId }).lean(), getRecentTrades(userId, 5)]);
+  const endDate = date ? getEndOfDay(date) : new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - 7); // last 7 days context
 
-  const result = psychologicalRadar.calculatePsychologicalRadar(recentTrades, plan);
+  const [plan, recentTrades] = await Promise.all([
+    TradingPlan.findOne({ userId }).lean(),
+    getTradesInRange(userId, startDate, endDate),
+  ]);
+
+  const result = psychologicalRadar.calculatePsychologicalRadar(recentTrades.slice(0, 5), plan);
 
   logger.info('[ZentraService] Psychological radar generated for %d trades', result.tradesAnalyzed);
   return result;
@@ -156,27 +163,28 @@ const getPsychologicalRadar = async (userId) => {
 /**
  * Feature 5: Get Breathwork Suggestion
  */
-const getBreathworkSuggestion = async (userId) => {
-  logger.info('[ZentraService] getBreathworkSuggestion for user: %s', userId);
+const getBreathworkSuggestion = async (userId, date) => {
+  logger.info('[ZentraService] getBreathworkSuggestion for user: %s date: %s', userId, date || 'today');
 
-  const [plan, todayTrades, recentTrades] = await Promise.all([
+  const endDate = date ? getEndOfDay(date) : new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - 7);
+
+  const [plan, dateTrades, recentTrades] = await Promise.all([
     TradingPlan.findOne({ userId }).lean(),
-    getTodayTrades(userId),
-    getRecentTrades(userId, 5),
+    getTradesForDate(userId, date),
+    getTradesInRange(userId, startDate, endDate),
   ]);
 
-  // Get mental battery
-  const planControlResult = planControl.calculatePlanControl(recentTrades, plan);
-  const batteryResult = mentalBattery.calculateMentalBattery(todayTrades, plan, planControlResult.percentage);
-
-  // Get radar for emotional volatility
-  const radarResult = psychologicalRadar.calculatePsychologicalRadar(recentTrades, plan);
+  const planControlResult = planControl.calculatePlanControl(recentTrades.slice(0, 5), plan);
+  const batteryResult = mentalBattery.calculateMentalBattery(dateTrades, plan, planControlResult.percentage);
+  const radarResult = psychologicalRadar.calculatePsychologicalRadar(recentTrades.slice(0, 5), plan);
 
   const result = breathwork.shouldSuggestBreathwork({
     mentalBattery: batteryResult.battery,
     emotionalVolatility: radarResult.traits.emotionalVolatility,
-    todayTrades,
-    sessionStartBattery: 100, // Assuming session starts at 100
+    todayTrades: dateTrades,
+    sessionStartBattery: 100,
   });
 
   logger.info('[ZentraService] Breathwork suggestion: %s', result.shouldSuggest);
@@ -186,18 +194,22 @@ const getBreathworkSuggestion = async (userId) => {
 /**
  * Feature 6: Get Performance Window
  */
-const getPerformanceWindow = async (userId) => {
-  logger.info('[ZentraService] getPerformanceWindow for user: %s', userId);
+const getPerformanceWindow = async (userId, date) => {
+  logger.info('[ZentraService] getPerformanceWindow for user: %s date: %s', userId, date || 'today');
+
+  const endDate = date ? getEndOfDay(date) : new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - 30);
 
   const [plan, recentTrades] = await Promise.all([
     TradingPlan.findOne({ userId }).lean(),
-    getRecentTrades(userId, 10), // Get 10 to compare current 5 vs previous 5
+    getTradesInRange(userId, startDate, endDate),
   ]);
 
-  const currentTrades = recentTrades.slice(0, 5);
-  const previousTrades = recentTrades.slice(5, 10);
+  const top10 = recentTrades.slice(0, 10);
+  const currentTrades = top10.slice(0, 5);
+  const previousTrades = top10.slice(5, 10);
 
-  // Calculate plan control for current and previous windows
   const currentPlanControl = planControl.calculatePlanControl(currentTrades, plan);
   const previousPlanControl = previousTrades.length > 0 ? planControl.calculatePlanControl(previousTrades, plan) : null;
 
@@ -214,25 +226,25 @@ const getPerformanceWindow = async (userId) => {
 
 /**
  * Feature 7: Get Consistency Trend
- * Returns trend analysis. Historical data is auto-analyzed on import.
+ * Returns trend analysis anchored to the selected date.
  */
-const getConsistencyTrend = async (userId, daysOption = '7') => {
-  logger.info('[ZentraService] getConsistencyTrend for user: %s days: %s', userId, daysOption);
+const getConsistencyTrend = async (userId, daysOption = '7', date) => {
+  logger.info('[ZentraService] getConsistencyTrend for user: %s days: %s date: %s', userId, daysOption, date || 'today');
 
-  // Calculate date range based on option
+  const endDate = date ? getEndOfDay(date) : new Date();
   let startDate;
   if (daysOption === 'all') {
     startDate = new Date(0);
   } else {
     const days = parseInt(daysOption, 10);
-    startDate = new Date();
+    startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - days);
   }
 
-  const [plan, trades, todayTrades] = await Promise.all([
+  const [plan, trades, dateTrades] = await Promise.all([
     TradingPlan.findOne({ userId }).lean(),
-    getTradesInRange(userId, startDate),
-    getTodayTrades(userId),
+    getTradesInRange(userId, startDate, endDate),
+    getTradesForDate(userId, date),
   ]);
 
   const result = consistencyTrend.calculateConsistencyTrend(trades, plan, daysOption);
@@ -243,18 +255,18 @@ const getConsistencyTrend = async (userId, daysOption = '7') => {
     result.summary.trendDirection
   );
 
-  // Persist today's stability score
-  const today = getStartOfToday();
-  const todayScore = consistencyTrend.calculateDailyScore(todayTrades, plan);
-  if (todayScore) {
+  // Persist the selected date's stability score
+  const snapshotDate = getStartOfDay(date);
+  const dateScore = consistencyTrend.calculateDailyScore(dateTrades, plan);
+  if (dateScore) {
     await StabilityTrendHistory.updateOne(
-      { userId, date: today },
+      { userId, date: snapshotDate },
       {
         userId,
-        date: today,
-        score: todayScore.score,
-        metrics: todayScore.metrics,
-        tradeCount: todayScore.tradeCount,
+        date: snapshotDate,
+        score: dateScore.score,
+        metrics: dateScore.metrics,
+        tradeCount: dateScore.tradeCount,
       },
       { upsert: true }
     );
@@ -277,6 +289,7 @@ const getBehaviorHeatmapHistory = async (userId, query = {}) => {
   const history = await BehaviorHeatmapHistory.find({
     userId,
     date: { $gte: start, $lte: end },
+    totalTrades: { $gt: 0 }, // only return snapshots that have actual trades
   })
     .sort({ date: -1 })
     .lean();
@@ -310,10 +323,10 @@ const getStabilityHistory = async (userId, query = {}) => {
 /**
  * Feature 8: Get Daily Quote
  */
-const getDailyQuote = async (userId) => {
-  logger.info('[ZentraService] getDailyQuote for user: %s', userId);
+const getDailyQuote = async (userId, date) => {
+  logger.info('[ZentraService] getDailyQuote for user: %s date: %s', userId, date || 'today');
 
-  const result = quotes.getDailyQuote(userId);
+  const result = quotes.getDailyQuote(userId, date);
 
   logger.info('[ZentraService] Daily quote category: %s', result.category);
   return result;

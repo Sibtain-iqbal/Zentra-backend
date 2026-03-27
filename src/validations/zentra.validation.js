@@ -1,37 +1,43 @@
 const Joi = require('joi');
 
+// Accept both YYYY-MM-DD and full ISO datetime strings from the frontend
+const dateQuery = Joi.object().keys({
+  date: Joi.string().optional(),
+});
+
 const getMentalBattery = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getPlanControl = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getBehaviorHeatmap = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getPsychologicalRadar = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getBreathworkSuggestion = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getPerformanceWindow = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getConsistencyTrend = {
   query: Joi.object().keys({
     days: Joi.string().valid('7', '10', '20', 'all').default('7'),
+    date: Joi.string().optional(),
   }),
 };
 
 const getDailyQuote = {
-  // No query parameters needed
+  query: dateQuery,
 };
 
 const getHeatmapHistory = {

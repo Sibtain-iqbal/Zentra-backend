@@ -70,13 +70,23 @@ const getCompleteDashboard = async (userId, period = 'MONTH') => {
  * Get dashboard summary
  * @param {ObjectId} userId
  * @param {string} period
+ * @param {string} [date] - Optional date string. If provided, filters trades to that day.
  * @returns {Promise<Object>}
  */
-const getDashboardSummary = async (userId, period = 'MONTH') => {
-  logger.info('Service: Getting dashboard summary for user: %s Period: %s', userId, period);
+const getDashboardSummary = async (userId, period = 'MONTH', date) => {
+  logger.info('Service: Getting dashboard summary for user: %s Period: %s Date: %s', userId, period, date || 'all');
 
-  // Get the last 10 trades (same as used in analysis) - no period filter for consistency
-  const last10Trades = await Trade.find({ userId }).sort({ entryTime: -1 }).limit(10).lean();
+  const tradeQuery = { userId };
+
+  // If a specific date is provided, filter to that day
+  if (date) {
+    const d = new Date(date);
+    const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const endOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    tradeQuery.entryTime = { $gte: startOfDay, $lte: endOfDay };
+  }
+
+  const last10Trades = await Trade.find(tradeQuery).sort({ entryTime: -1 }).limit(10).lean();
 
   logger.info('Service: Found last 10 trades for summary: %d', last10Trades.length);
 
