@@ -11,8 +11,9 @@ const getDashboard = catchAsync(async (req, res) => {
 });
 
 const getSummary = catchAsync(async (req, res) => {
-  logger.info('Getting dashboard summary for user: %s Period: %s', req.user.id, req.query.period);
-  const summary = await dashboardService.getDashboardSummary(req.user.id, req.query.period);
+  const { period, date } = req.query;
+  logger.info('Getting dashboard summary for user: %s Period: %s Date: %s', req.user.id, period, date || 'today');
+  const summary = await dashboardService.getDashboardSummary(req.user.id, period, date);
   logger.info(
     'Dashboard summary retrieved successfully for user: %s State: %s',
     req.user.id,
