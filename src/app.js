@@ -15,10 +15,6 @@ const routesV2 = require('./routes/v2');
 const { errorConverter, errorHandler } = require('./middlewares/error');
 const ApiError = require('./utils/ApiError');
 
-// for the dns to get the mongodb assess
-
-dns.setServers(['1.1.1.1', '8.8.8.8']);
-
 const app = express();
 
 // Trust proxy - needed for OAuth callbacks behind reverse proxy (Vercel, AWS, etc.)
